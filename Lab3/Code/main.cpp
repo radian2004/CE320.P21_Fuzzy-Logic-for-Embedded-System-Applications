@@ -1,4 +1,4 @@
-#include <DHT.h> //This library is used to in Arduino IDE or Wokwi IDE
+#include <DHT.h>
 #include "Fuzzy.h"
 
 // Định nghĩa các chân
@@ -132,36 +132,47 @@ void setup() {
   fuzzy->addFuzzyRule(new FuzzyRule(9, ifHotAndHumid, thenHigh));
 }
 
+
 void loop() {
-  // Đọc dữ liệu từ cảm biến DHT22
-  float t = dht22.readTemperature();
-  float h = dht22.readHumidity();
+    // Đọc dữ liệu từ cảm biến DHT22
+    float t = dht22.readTemperature();
+    float h = dht22.readHumidity();
 
-  // Kiểm tra nếu dữ liệu đọc hợp lệ
-  if (isnan(t) || isnan(h)) {
-    Serial.println("Failed to read from DHT22 sensor!");
-    return;
-  }
+    // Kiểm tra nếu dữ liệu đọc hợp lệ
+    if (isnan(t) || isnan(h)) {
+        Serial.println("Failed to read from DHT22 sensor!");
+        return;
+    }
 
-  // Đặt giá trị đầu vào cho hệ thống mờ
-  fuzzy->setInput(1, t);
-  fuzzy->setInput(2, h);
+    // Nếu nhiệt độ vượt quá 45°C, override giá trị đầu ra thành tối đa (100)
+    if (t > 45) {
+        Serial.print("Temp: "); Serial.print(t);
+        Serial.print("°C, Humidity: "); Serial.print(h);
+        Serial.print("%, Power Output: "); Serial.println("100");
+        // Bật hết đèn LED
+        digitalWrite(LED_LOW, HIGH);
+        digitalWrite(LED_MEDIUM, HIGH);
+        digitalWrite(LED_HIGH, HIGH);
+    } else {
+        // Đặt giá trị đầu vào cho hệ thống mờ
+        fuzzy->setInput(1, t);
+        fuzzy->setInput(2, h);
 
-  // Bắt đầu quá trình fuzzification
-  fuzzy->fuzzify();
+        // Bắt đầu quá trình fuzzification
+        fuzzy->fuzzify();
 
-  // Lấy giá trị đầu ra
-  float powerOutput = fuzzy->defuzzify(1);
+        // Lấy giá trị đầu ra từ hệ thống mờ
+        float powerOutput = fuzzy->defuzzify(1);
 
-  // Điều khiển đèn LED dựa vào giá trị powerOutput
-  digitalWrite(LED_LOW, powerOutput > 0);
-  digitalWrite(LED_MEDIUM, powerOutput >= 33);
-  digitalWrite(LED_HIGH, powerOutput >= 66);
+        // Điều khiển đèn LED dựa vào giá trị powerOutput
+        digitalWrite(LED_LOW, powerOutput > 0);
+        digitalWrite(LED_MEDIUM, powerOutput >= 33);
+        digitalWrite(LED_HIGH, powerOutput >= 66);
 
-  // In ra giá trị để debug
-  Serial.print("Temp: "); Serial.print(t);
-  Serial.print("°C, Humidity: "); Serial.print(h);
-  Serial.print("%, Power Output: "); Serial.println(powerOutput);
-
-  delay(1000);
+        // In ra giá trị để debug
+        Serial.print("Temp: "); Serial.print(t);
+        Serial.print("°C, Humidity: "); Serial.print(h);
+        Serial.print("%, Power Output: "); Serial.println(powerOutput);
+    }
+    delay(1000);
 }
