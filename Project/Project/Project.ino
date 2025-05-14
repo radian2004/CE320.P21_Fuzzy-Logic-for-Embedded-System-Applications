@@ -1,180 +1,207 @@
 #include <DHT.h>
 #include <Fuzzy.h>
 #include <LiquidCrystal_I2C.h>
+#include <math.h>
 
 #define DHTPIN 5
 #define DHTTYPE DHT22
 #define IN1 7
 #define IN2 8
-#define EN   6
+#define EN 6
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 DHT dht(DHTPIN, DHTTYPE);
-Fuzzy* fuzzy = new Fuzzy();
+Fuzzy fuzzy;
 
 // enums cho readability
-typedef enum { _V_COLD, _COLD, _WARM, _HOT, _V_HOT } TempLevel;
-typedef enum { _LOW_H, _MED_H, _HIGH_H } HumLevel;
-typedef enum { _V_LOW, _LOW, _MEDIUM, _HIGH, _V_HIGH } PowerLevel;
+enum TempLevel
+{
+  VCOLD,
+  COLD,
+  WARM,
+  HOT,
+  VHOT
+};
+enum HumLevel
+{
+  LOWH,
+  MEDH,
+  HIGHH
+};
+enum PowerLevel
+{
+  VPWR,
+  LOWP,
+  MEDP,
+  HIGHP,
+  VIGHP
+};
 
-// hàm tiện thêm fuzzy sets
-void addFuzzySets(FuzzyInput* in, FuzzySet* sets[], int n) {
-  for(int i = 0; i < n; i++) in->addFuzzySet(sets[i]);
+// 1. khai báo tĩnh các fuzzy set object
+static FuzzySet fTempObjs[5] = {
+    {0, 0, 20, 26.7},     // very cold
+    {20, 26.7, 32.2, 35}, // cold
+    {30, 32.2, 40.6, 45}, // warm
+    {40, 40.6, 54.4, 60}, // hot
+    {54.4, 60, 65, 65}    // very hot
+};
+static FuzzySet fHumObjs[3] = {
+    {0, 0, 30, 50},    // low humidity
+    {30, 50, 70, 90},  // medium humidity
+    {70, 90, 100, 100} // high humidity
+};
+static FuzzySet fPwrObjs[5] = {
+    {0, 0, 20, 30},    // very low power
+    {20, 30, 40, 50},  // low power
+    {35, 40, 60, 65},  // medium power
+    {55, 60, 80, 85},  // high power
+    {80, 90, 100, 100} // very high power
+};
+
+// 2. mảng con trỏ tới các fuzzy set
+FuzzySet *fTemp[5] = {&fTempObjs[0], &fTempObjs[1], &fTempObjs[2], &fTempObjs[3], &fTempObjs[4]};
+FuzzySet *fHum[3] = {&fHumObjs[0], &fHumObjs[1], &fHumObjs[2]};
+FuzzySet *fPwr[5] = {&fPwrObjs[0], &fPwrObjs[1], &fPwrObjs[2], &fPwrObjs[3], &fPwrObjs[4]};
+
+// 3. helper thêm fuzzy sets
+void addFuzzySets(FuzzyInput *in, FuzzySet *sets[], int n)
+{
+  for (int i = 0; i < n; ++i)
+    in->addFuzzySet(sets[i]);
 }
-void addFuzzySets(FuzzyOutput* out, FuzzySet* sets[], int n) {
-  for(int i = 0; i < n; i++) out->addFuzzySet(sets[i]);
+void addFuzzySets(FuzzyOutput *out, FuzzySet *sets[], int n)
+{
+  for (int i = 0; i < n; ++i)
+    out->addFuzzySet(sets[i]);
 }
 
-void setup() {
+// 4. mô tả luật
+struct RuleDesc
+{
+  TempLevel t;
+  HumLevel h;
+  PowerLevel p;
+};
+static const RuleDesc rules[] = {
+    {VHOT, HIGHH, VIGHP},
+    {HOT, MEDH, HIGHP},
+    {HOT, HIGHH, VIGHP},
+    {WARM, MEDH, MEDP},
+    {WARM, HIGHH, MEDP},
+    // very cold or cold + low humidity => very low power
+    {VCOLD, LOWH, VPWR},
+    {COLD, LOWH, VPWR}};
+
+void setupFuzzy()
+{
+  static FuzzyInput tempIn(1), humIn(2);
+  static FuzzyOutput powerOut(1);
+
+  addFuzzySets(&tempIn, fTemp, 5);
+  addFuzzySets(&humIn, fHum, 3);
+  addFuzzySets(&powerOut, fPwr, 5);
+
+  fuzzy.addFuzzyInput(&tempIn);
+  fuzzy.addFuzzyInput(&humIn);
+  fuzzy.addFuzzyOutput(&powerOut);
+
+  uint16_t id = 1;
+  for (auto &r : rules)
+  {
+    auto *ant = new FuzzyRuleAntecedent();
+    if ((r.t == VCOLD || r.t == COLD) && r.h == LOWH && r.p == VPWR)
+    {
+      ant->joinWithOR(&fTempObjs[VCOLD], &fTempObjs[COLD]);
+    }
+    else
+    {
+      ant->joinWithAND(&fTempObjs[r.t], &fHumObjs[r.h]);
+    }
+    auto *cons = new FuzzyRuleConsequent();
+    cons->addOutput(&fPwrObjs[r.p]);
+    fuzzy.addFuzzyRule(new FuzzyRule(id++, ant, cons));
+  }
+}
+
+// 5. tính heat index đúng đơn vị celsius
+float computeHI(float T_C, float H)
+{
+  // chuyển °C -> °F
+  float T_F = T_C * 9.0f / 5.0f + 32.0f;
+  // công thức NOAA bậc 4, kết quả °F
+  float HI_F = -42.379f + 2.04901523f * T_F + 10.14333127f * H - 0.22475541f * T_F * H - 0.00683783f * T_F * T_F - 0.05481717f * H * H + 0.00122874f * T_F * T_F * H + 0.00085282f * T_F * H * H - 0.00000199f * T_F * T_F * H * H;
+  // chuyển ngược về °C
+  return (HI_F - 32.0f) * 5.0f / 9.0f;
+}
+
+void setup()
+{
   Serial.begin(9600);
-  lcd.init(); lcd.backlight();
+  lcd.init();
+  lcd.backlight();
   dht.begin();
   delay(2000);
+  setupFuzzy();
 
-  //--- khai báo fuzzy sets nhiệt độ ---
-  const float tVC[4] = {0,   0,   20, 26.7};
-  const float tC [4] = {20, 26.7, 32.2, 35};
-  const float tW [4] = {30, 32.2, 40.6, 45};
-  const float tH [4] = {40, 40.6, 54.4, 60};
-  const float tVH[4] = {54.4, 60,  65, 65};
-  FuzzySet* fTemp[] = {
-    new FuzzySet(tVC[0], tVC[1], tVC[2], tVC[3]),
-    new FuzzySet(tC [0], tC [1], tC [2], tC [3]),
-    new FuzzySet(tW [0], tW [1], tW [2], tW [3]),
-    new FuzzySet(tH [0], tH [1], tH [2], tH [3]),
-    new FuzzySet(tVH[0],tVH[1],tVH[2],tVH[3])
-  };
-
-  //--- khai báo fuzzy sets độ ẩm ---
-  const float hL [4] = {0,   0,   30, 50};
-  const float hM [4] = {30,  50,  70, 90};
-  const float hH [4] = {70,  90, 100,100};
-  FuzzySet* fHum[] = {
-    new FuzzySet(hL[0], hL[1], hL[2], hL[3]),
-    new FuzzySet(hM[0], hM[1], hM[2], hM[3]),
-    new FuzzySet(hH[0], hH[1], hH[2], hH[3])
-  };
-
-  //--- khai báo fuzzy sets công suất quạt ---
-  const float pVL[4] = {0,   0,   20, 30};
-  const float pL [4] = {20,  30,  40, 50};
-  const float pM [4] = {35,  40,  60, 65};
-  const float pH [4] = {55,  60,  80, 85};
-  const float pVH[4] = {80,  90, 100,100};
-  FuzzySet* fPower[] = {
-    new FuzzySet(pVL[0],pVL[1],pVL[2],pVL[3]),
-    new FuzzySet(pL [0],pL [1],pL [2],pL [3]),
-    new FuzzySet(pM [0],pM [1],pM [2],pM [3]),
-    new FuzzySet(pH [0],pH [1],pH [2],pH [3]),
-    new FuzzySet(pVH[0],pVH[1],pVH[2],pVH[3])
-  };
-
-  //--- tạo input/output fuzzy
-  FuzzyInput* tempInput = new FuzzyInput(1);
-  FuzzyInput* humInput  = new FuzzyInput(2);
-  FuzzyOutput* powerOut = new FuzzyOutput(1);
-
-  addFuzzySets(tempInput, fTemp,   5);
-  addFuzzySets(humInput,  fHum,    3);
-  addFuzzySets(powerOut,  fPower,  5);
-
-  fuzzy->addFuzzyInput(tempInput);
-  fuzzy->addFuzzyInput(humInput);
-  fuzzy->addFuzzyOutput(powerOut);
-
-  //--- thêm luật mờ ---
-  // 1. very_hot AND high_humidity -> very_high power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithAND(fTemp[_V_HOT], fHum[_HIGH_H]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_V_HIGH]);
-    fuzzy->addFuzzyRule(new FuzzyRule(1, ant, cons));
-  }
-  // 2. hot AND medium_humidity -> high power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithAND(fTemp[_HOT], fHum[_MED_H]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_HIGH]);
-    fuzzy->addFuzzyRule(new FuzzyRule(2, ant, cons));
-  }
-  // 3. hot AND high_humidity -> very_high power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithAND(fTemp[_HOT], fHum[_HIGH_H]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_V_HIGH]);
-    fuzzy->addFuzzyRule(new FuzzyRule(3, ant, cons));
-  }
-  // 4. warm AND medium_humidity -> medium power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithAND(fTemp[_WARM], fHum[_MED_H]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_MEDIUM]);
-    fuzzy->addFuzzyRule(new FuzzyRule(4, ant, cons));
-  }
-  // 5. warm AND high_humidity -> medium power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithAND(fTemp[_WARM], fHum[_HIGH_H]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_MEDIUM]);
-    fuzzy->addFuzzyRule(new FuzzyRule(5, ant, cons));
-  }
-  // 6. cold OR very_cold -> very_low power
-  {
-    auto* ant = new FuzzyRuleAntecedent();
-    ant->joinWithOR(fTemp[_V_COLD], fTemp[_COLD]);
-    auto* cons = new FuzzyRuleConsequent();
-    cons->addOutput(fPower[_V_LOW]);
-    fuzzy->addFuzzyRule(new FuzzyRule(6, ant, cons));
-  }
-
-  //--- thiết lập motor ---
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
-  pinMode(EN,   OUTPUT);
+  pinMode(EN, OUTPUT);
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
 }
 
-void loop() {
+void loop()
+{
   float T = dht.readTemperature();
   float H = dht.readHumidity();
-  if (isnan(T) || isnan(H)) {
+  if (isnan(T) || isnan(H))
+  {
     lcd.clear();
-    lcd.setCursor(0,0); lcd.print("Sensor error!");
-    Serial.println("DHT read failed");
+    lcd.setCursor(0, 0);
+    lcd.print("sensor error");
     delay(2000);
     return;
   }
-  float HI = dht.computeHeatIndex(T, H, false);
 
-  // fuzzy process
-  fuzzy->setInput(1, HI);
-  fuzzy->setInput(2, H);
-  fuzzy->fuzzify();
-  float P = fuzzy->defuzzify(1);
+  float HIc = computeHI(T, H);
+  fuzzy.setInput(1, HIc);
+  fuzzy.setInput(2, H);
+  fuzzy.fuzzify();
+  float P = fuzzy.defuzzify(1);
 
-  // điều khiển PWM
-  analogWrite(EN, (uint8_t)((P/100.0)*255));
+  uint8_t pwm = (uint8_t)round((P / 100.0f) * 255);
+  analogWrite(EN, pwm);
 
-  // debug ra Serial
-  Serial.print("T="); Serial.print(T,1);
-  Serial.print("C H="); Serial.print(H,1);
-  Serial.print("% HI="); Serial.print(HI,1);
-  Serial.print("C P="); Serial.print(P,1); Serial.println("%");
+  // debug serial
+  Serial.print("Temperature = ");
+  Serial.print(T, 1);
+  Serial.print("°C ");
+  Serial.print("Humidity = ");
+  Serial.print(H, 1);
+  Serial.print("% ");
+  Serial.print("Heat Index = ");
+  Serial.print(HIc, 1);
+  Serial.print("°C ");
+  Serial.print("Power = ");
+  Serial.print(P, 1);
+  Serial.println("%");
 
-  // hiển thị lên LCD
+  // hiển thị LCD
   lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("T:"); lcd.print(T,1);
-  lcd.print("C H:"); lcd.print(H,0); lcd.print("%");
-  lcd.setCursor(0,1);
-  lcd.print("HI:"); lcd.print(HI,1);
-  lcd.print("C P:"); lcd.print(P,0); lcd.print("%");
+  lcd.setCursor(0, 0);
+  lcd.print(" T:");
+  lcd.print(T, 1);
+  lcd.write(223);
+  lcd.print("C H:");
+  lcd.print(H, 0);
+  lcd.print("%");
+  lcd.setCursor(0, 1);
+  lcd.print("HI:");
+  lcd.print(HIc, 1);
+  lcd.write(223);
+  lcd.print("C P:");
+  lcd.print((int)round(P));
+  lcd.print("%");
 
   delay(2000);
 }
