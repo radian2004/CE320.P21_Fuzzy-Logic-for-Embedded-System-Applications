@@ -1,12 +1,20 @@
 #include <DHT.h>
 #include <Fuzzy.h>
+#include <LiquidCrystal_I2C.h> // Thêm thư viện LCD
 
 // ============== < DEFINES > ==============
+// #define DHTTYPE DHT22
+// #define DHTPIN 5
+// #define EN 6
+// #define IN1 7
+// #define IN2 8
+
+#define DHTPIN 15    // Chân cảm biến DHT22
 #define DHTTYPE DHT22
-#define DHTPIN 5
-#define EN 6
-#define IN1 7
-#define IN2 8
+#define EN 18        // Chân PWM cho động cơ
+#define IN1 5       // Chân điều khiển hướng 1
+#define IN2 17       // Chân điều khiển hướng 2
+
 #define MOTOR_RES 255
 
 // Heat index set ranges
@@ -28,6 +36,7 @@
 // ============ < GLOBAL VARS > ============
 DHT dht(DHTPIN, DHTTYPE);
 Fuzzy fuzzy;
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Khởi tạo LCD với địa chỉ I2C 0x27, 16 cột, 2 hàng
 
 // Fuzzy sets
 static FuzzySet heat_index_fsets[] = {
@@ -55,26 +64,28 @@ float computeHI(float T_C, float H);
 void setup() {
     Serial.begin(9600);
     dht.begin();
-    delay(2000); // Wait for sensor to stabilize
+    lcd.init(); // Khởi tạo LCD
+    lcd.backlight(); // Bật đèn nền LCD
+    delay(2000); // Chờ cảm biến ổn định
 
-    // Check sensor
+    // Kiểm tra cảm biến
     if (isnan(dht.readTemperature()) || isnan(dht.readHumidity())) {
         Serial.println("DHT sensor error! Check wiring.");
-        while (true); // Stop if sensor fails
+        while (true); // Dừng nếu cảm biến lỗi
     }
 
-    // Add fuzzy sets
+    // Thêm tập mờ
     addFuzzySets(&heat_index, heat_index_fsets, 5);
     addFuzzySets(&power, power_fsets, 5);
 
-    // Add to fuzzy system
+    // Thêm vào hệ thống mờ
     fuzzy.addFuzzyInput(&heat_index);
     fuzzy.addFuzzyOutput(&power);
 
-    // Add rules
+    // Thêm luật mờ
     addFuzzyRules(heat_index_fsets, power_fsets, &fuzzy);
 
-    // Motor setup
+    // Cài đặt động cơ
     pinMode(IN1, OUTPUT);
     pinMode(IN2, OUTPUT);
     pinMode(EN, OUTPUT);
@@ -87,13 +98,12 @@ void setup() {
 // =============== < LOOP > ================
 void loop() {
     static uint8_t cycle = 0;
-
-    if (++cycle >= 5) { // Read every 10 seconds (5 cycles * 2s delay)
+    if (++cycle >= 5) { // Cập nhật mỗi 10 giây (5 chu kỳ * 2 giây)
         cycle = 0;
         float T = dht.readTemperature();
         float H = dht.readHumidity();
 
-        // Check for invalid readings
+        // Kiểm tra giá trị không hợp lệ
         if (isnan(T) || isnan(H) || T < 0 || T > 60 || H < 0 || H > 100) {
             Serial.println("Sensor error!");
             return;
@@ -104,11 +114,11 @@ void loop() {
         fuzzy.fuzzify();
         float P = fuzzy.defuzzify(1);
 
-        // Control motor
+        // Điều khiển động cơ
         uint8_t pwm = (uint8_t)round((P / 100.0f) * MOTOR_RES);
         analogWrite(EN, pwm);
 
-        // Verbose serial output as requested
+        // In ra Serial
         Serial.print("Temperature = ");
         Serial.print(T, 1);
         Serial.print("°C ");
@@ -121,8 +131,25 @@ void loop() {
         Serial.print("Power = ");
         Serial.print(P, 1);
         Serial.println("%");
+
+        // In ra LCD
+        lcd.clear();
+        lcd.setCursor(1, 0);
+        lcd.print("T:");
+        lcd.print(T, 1);
+        lcd.write(223); // Ký hiệu độ (°)
+        lcd.print("C H:");
+        lcd.print(H, 0);
+        lcd.print("%");
+        lcd.setCursor(0, 1);
+        lcd.print("HI:");
+        lcd.print(HI, 1); // Sửa từ HIc thành HI
+        lcd.write(223); // Ký hiệu độ (°)
+        lcd.print("C P:");
+        lcd.print((int)round(P));
+        lcd.print("%");
     }
-    delay(1000);
+    delay(1000); // Đợi 2 giây mỗi chu kỳ
 }
 
 // =========================================
@@ -151,13 +178,13 @@ void addFuzzyRules(FuzzySet *heat_index_fsets, FuzzySet *power_fsets, Fuzzy *fuz
 }
 
 float computeHI(float T_C, float H) {
-    // Convert to Fahrenheit
+    // Chuyển sang Fahrenheit
     float T_F = T_C * 9.0f / 5.0f + 32.0f;
-    // NOAA Heat Index formula
+    // Công thức chỉ số nhiệt NOAA
     float HI_F = -42.379f + 2.04901523f * T_F + 10.14333127f * H - 0.22475541f * T_F * H - 
                  0.00683783f * T_F * T_F - 0.05481717f * H * H + 0.00122874f * T_F * T_F * H + 
                  0.00085282f * T_F * H * H - 0.00000199f * T_F * T_F * H * H;
-    // Convert back to Celsius
+    // Chuyển lại sang Celsius
     return (HI_F - 32.0f) * 5.0f / 9.0f;
 }
 
