@@ -1,13 +1,22 @@
 #include <DHT.h>
 #include <Fuzzy.h>
+#include <LiquidCrystal_I2C.h> 
 
 // ============== < DEFINES > ==============
 #define DHTTYPE DHT22
-#define DHTPIN 5
-#define EN 6
-#define IN1 7
-#define IN2 8
+// #define DHTPIN 5
+// #define EN 6
+// #define IN1 7
+// #define IN2 8
+
+#define DHTPIN 15
+#define EN 18
+#define IN1 5
+#define IN2 17
+
 #define MOTOR_RES 255
+
+
 
 // Heat index set ranges
 #define VERY_COLD_SET 0, 0, 20, 26.7
@@ -26,6 +35,7 @@
 // =========================================
 
 // ============ < GLOBAL VARS > ============
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
 DHT dht(DHTPIN, DHTTYPE);
 Fuzzy fuzzy;
 
@@ -55,6 +65,8 @@ float computeHI(float T_C, float H);
 void setup() {
     Serial.begin(9600);
     dht.begin();
+    lcd.init(); // Khởi tạo LCD
+    lcd.backlight(); // Bật đèn nền LCD
     delay(2000); // Wait for sensor to stabilize
 
     // Check sensor
@@ -121,6 +133,22 @@ void loop() {
         Serial.print("Power = ");
         Serial.print(P, 1);
         Serial.println("%");
+
+        lcd.clear();
+        lcd.setCursor(1, 0);
+        lcd.print("T:");
+        lcd.print(T, 1);
+        lcd.write(223); // Ký hiệu độ (°)
+        lcd.print("C H:");
+        lcd.print(H, 0);
+        lcd.print("%");
+        lcd.setCursor(0, 1);
+        lcd.print("HI:");
+        lcd.print(HI, 1); // Sửa từ HIc thành HI
+        lcd.write(223); // Ký hiệu độ (°)
+        lcd.print("C P:");
+        lcd.print((int)round(P));
+        lcd.print("%");
     }
     delay(1000);
 }
