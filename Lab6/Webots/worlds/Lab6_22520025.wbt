@@ -1,0 +1,44 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/plants/protos/FlowerPot.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.16015393487675697 -0.890159685456006 0.426575258931359 5.4849424344517645
+  position -0.5617908217765942 0.13185599467266237 0.6388691334073602
+  followType "None"
+}
+TexturedBackground {
+  skyColor [
+    0 0 0
+    0 0 0
+  ]
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  translation 0 0.12 0
+  floorSize 0.5 0.6
+}
+E-puck {
+  hidden position_0_0 3118.119741394461
+  hidden position_0_1 5209.827851077551
+  hidden linearVelocity_0 1.3913206492096228e-08 7.904400926387705e-10 6.092853747456199e-09
+  hidden angularVelocity_0 4.540670913114777e-07 5.8652550097732215e-08 -4.846644198476823e-08
+  hidden rotation_1 0 1 0 1.6598290333861236
+  hidden linearVelocity_1 1.3727663043804528e-08 -2.2417180445813315e-10 7.461921085639986e-09
+  hidden angularVelocity_1 -1.0525422749270166 -7.746762305975125e-05 9.167399419017425e-05
+  hidden rotation_2 0 -1 0 5.215953881505972
+  hidden linearVelocity_2 1.4678926266864582e-08 -2.7334926144242045e-09 4.472877910744275e-09
+  hidden angularVelocity_2 -1.4006413501320438 -0.00010320796005170273 0.00012195655461116013
+  translation 0.038692235804189165 -0.08315670568235613 -5.736929639389189e-05
+  rotation -0.0011563161320143082 0.0010691222051583704 -0.9999987599545878 -1.5708711623921854
+  controller "22520025"
+}
+FlowerPot {
+}
